@@ -4,9 +4,8 @@ Managerie.py | Jackson Callaghan | Sep 2018
 Managerie 2.0 - sorts through files according to basic rules, and does not prompt user for permission to delete or move
 files. See readme for information.
 
-TODO does not correctly identify sorting matches
-TODO does not correctly identify duplicates
-TODO add handling for list of regex for more granular control
+TODO finish commenting code for clarity
+TODO formatting, maybe variable naming?
 """
 
 import os
@@ -49,8 +48,8 @@ class sorter:
         self.rules = []
         self.contents = None
 
-        self.numbered_file = re.compile(".* \([0-9]*\)")  # regex for a numbered file (windows duplicate format)
-        self.number_splitter = re.compile(" \([0-9]*\)")  # regex that matches number of file for removal
+        self.numbered_file = re.compile(".*\([0-9]*\)")  # regex for a numbered file (windows duplicate format)
+        self.number_splitter = re.compile("\([0-9]*\)")  # regex that matches number of file for removal
 
         open('managerie_log.txt', 'w').close()  # opens and closes file to make sure it exists
         logging.basicConfig(filename='managerie_log.txt', level=logging.DEBUG)  # sets up log file
@@ -77,6 +76,7 @@ class sorter:
                 self.contents = [i for i in contents]  # converts (?) to list format and stores
                 for item in self.contents:
                     self.runrules(item, self.contents)
+                    logging.debug("")
         except FileNotFoundError:
             self.unexpected_exit("Sort directory does not exist")
         logging.debug("Sort Complete!")
@@ -112,9 +112,10 @@ class sorter:
                 if re.split(self.number_splitter, file.name)[0] in [os.path.splitext(i.name)[0] for i in contents]:
                     self.delfile(file)
                     return True
-        elif self.numbered_file.match(file.name) and (re.split(self.number_splitter, file.name)[0] in [os.path.splitext(i.name)[0] for i in self.contents]):
-            self.delfile(file)
-            return True
+        elif self.numbered_file.match(file.name):
+            if re.split(self.number_splitter, file.name)[0] in [os.path.splitext(i.name)[0] for i in self.contents]:
+                self.delfile(file)
+                return True
         else:
             return False
 
@@ -142,8 +143,8 @@ class sorter:
             return "moved"
 
     def runrules(self, file, contents):  # runs a file through all rules to find appropriate action
-        if file.name == "Managerie.ini":
-            logging.debug("File is Managerie config. Skipping...")
+        if file.name in ("Managerie.ini", "Managerie.py"):
+            logging.debug("File is Managerie-critical file. Skipping...")
             return "Ignored"
         if file.name == "managerie_log.txt":
             logging.debug("File is managerie log. {}...".format("Deleting" if not self.debug else "Skipping"))
@@ -165,7 +166,14 @@ class sorter:
                 if any(True if x.lower() in file.name.lower() else False for x in rule.match):  # checks if file has any keywords in it
                     return self.resolve(file, rule)
             elif rule.matchtype == "condition":
-                if eval(rule.match):  # evaluates code given by config for checking arbitrary conditions
+                try:
+                    if eval(rule.match):  # evaluates code given by config for checking arbitrary conditions
+                        return self.resolve(file, rule)
+                except:
+                    logging.debug("Conditional code failed. Skipping...")
+                    continue
+            elif rule.matchtype == "regex_list":
+                if any(True if re.compile(x).match(file.name) else False for x in rule.match):
                     return self.resolve(file, rule)
 
     def unexpected_exit(self, msg):  # logs error and exits after waiting long enough for user to read error
