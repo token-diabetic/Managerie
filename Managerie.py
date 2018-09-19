@@ -80,7 +80,7 @@ class sorter:
             type = "del"
             matchtype = item[1]
             if matchtype in ("regex", "condition"):
-                match = item[2]
+                match = "".join(item[2:])
             else:
                 match = item[2:]
             self.delrules.append(rule(name, type, matchtype, match))  # creates rules
@@ -128,13 +128,30 @@ class sorter:
         else:
             shutil.rmtree(file.path)
 
-    def runrules(self, file, contents):  # runs a file through all rules to find appropriate action TODO (needs commenting)
-        if self.is_duplicate(file):
+    def runrules(self, file, contents):  # runs a file through all rules to find appropriate action
+        if self.is_duplicate(file):  # checks if file is duplicate
             logging.debug("File is duplicate in directory. Deleting...")
-            self.delfile(file)
             return "Deleted"
 
-        for rule in self.delrules:
+        for rule in self.sortrules:  # checks if file matches sorting rule
+            logging.debug("Attempting to match file {} to sorting rule...".format(file.name))
+            if rule.match == "regex":
+                if re.compile(rule.match).match(file.name):  # checks against given regex
+                    logging.debug("File matches sorting rule {}. Moving... ".format(rule.name))
+                    self.move(file, rule.targetfolder)
+                    return "moved"
+            elif rule.match == "list":
+                if any(True if x in file.name else False for x in rule.match):  # checks if file has any keywords in it
+                    logging.debug("File matches sorting rule {}. Moving... ".format(rule.name))
+                    self.move(file, rule.targetfolder)
+                    return "moved"
+            elif rule.matchtype == "condition":
+                if eval(rule.match):  # evaluates code given by config for checking arbitrary conditions
+                    logging.debug("File matches sorting rule {}. Moving...".format(rule.name))
+                    self.move(file, rule.targetfolder)
+                    return "moved"
+
+        for rule in self.delrules:  # checks if file matches deletion rule
             logging.debug("Attempting to match file {} to deletion rule...".format(file.name))
             if rule.matchtype == "regex":
                 if re.compile(rule.match).match(file.name):
@@ -146,17 +163,11 @@ class sorter:
                     logging.debug("File matches deletion rule {}. Deleting...".format(rule.name))
                     self.delfile(file)
                     return "Deleted"
-
-        for rule in self.sortrules:
-            logging.debug("Attempting to match file {} to sorting rule...".format(file.name))
-            if rule.match == "regex":
-                if re.compile(rule.match).match(file.name):
-                    logging.debug("File matches sorting rule {}. Moving... ".format(rule.name))
-                    self.move(file, rule.targetfolder)
-
-        # TODO run through populated rules and apply correct resolution
-        # TODO first check dupes, then sort rules, then delete rules
-        # TODO implement handling for evaluated rules
+            elif rule.matchtype == "condition":
+                if eval(rule.match):
+                    logging.debug("File matches deletion rule {}. Deleting...".format(rule.name))
+                    self.delfile(file)
+                    return "Deleted"
 
     def unexpected_exit(self, msg):  # logs error and exits after waiting long enough for user to read error
         logging.error("ERROR: {}".format(msg))
