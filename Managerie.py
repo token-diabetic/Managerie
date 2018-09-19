@@ -4,8 +4,6 @@ Managerie.py | Jackson Callaghan | Sep 2018
 Managerie 2.0 - sorts through files according to basic rules, and does not prompt user for permission to delete or move
 files. See readme for information.
 
-TODO finish commenting code for clarity
-TODO formatting, maybe variable naming?
 """
 
 import os
@@ -107,12 +105,12 @@ class sorter:
 
     def is_duplicate(self, file, target=None):  # checks if file has duplicate in target location, DELETES if true
         logging.debug("Checking if file {} is duplicate...".format(file.name))
-        if target is not None:  # TODO needs commenting
-            with os.scandir(self.sortdir) as contents:
+        if target is not None:  # checks if there's a target location to check
+            with os.scandir(self.sortdir) as contents:  # opens target location and scans files into list of file objects
                 if re.split(self.number_splitter, file.name)[0] in [os.path.splitext(i.name)[0] for i in contents]:
                     self.delfile(file)
                     return True
-        elif self.numbered_file.match(file.name):
+        elif self.numbered_file.match(file.name):  # checks if file is a numbered file
             if re.split(self.number_splitter, file.name)[0] in [os.path.splitext(i.name)[0] for i in self.contents]:
                 self.delfile(file)
                 return True
