@@ -3,6 +3,10 @@ Managerie.py | Jackson Callaghan | Sep 2018
 
 Managerie 2.0 - sorts through files according to basic rules, and does not prompt user for permission to delete or move
 files. See readme for information.
+
+TODO does not correctly identify sorting matches
+TODO does not correctly identify duplicates
+TODO add handling for list of regex for more granular control
 """
 
 import os
@@ -22,6 +26,9 @@ class rule:
         self.match = match
         self.targetfolder = targetfolder
 
+    def __str__(self):
+        return "{}: {}, {}, {}, {}".format(self.name, self.type, self.matchtype, self.match, self.targetfolder)
+
     def prep_regex(self):
         if self.matchtype == "regex":
             temp = self.match
@@ -36,15 +43,18 @@ class rule:
 class sorter:
 
     def __init__(self):
-        self.config = configparser.ConfigParser()  # makes config object, when read works like dictionary
+        self.config = configparser.ConfigParser()  # makes config object, when read works like list
         self.debug = False  # saves debug information to log file
         self.sortdir = ""
-        self.delrules = []
-        self.sortrules = []
+        self.rules = []
+        self.contents = None
 
         self.numbered_file = re.compile(".* \([0-9]*\)")  # regex for a numbered file (windows duplicate format)
         self.number_splitter = re.compile(" \([0-9]*\)")  # regex that matches number of file for removal
 
+        open('managerie_log.txt', 'w').close()  # opens and closes file to make sure it exists
+        logging.basicConfig(filename='managerie_log.txt', level=logging.DEBUG)  # sets up log file
+        logging.debug("Debug Log File Established.")
         stderrLogger = logging.StreamHandler()  # creates stream handler that pipes log entries to stdout (console)
         stderrLogger.setFormatter(logging.Formatter(logging.BASIC_FORMAT))  # sets basic logging format
         logging.getLogger().addHandler(stderrLogger)  # adds handler to logger
@@ -53,14 +63,15 @@ class sorter:
 
         try:
             self.get_rules()
-        except FileNotFoundError:
+        except (FileNotFoundError, KeyError):
             self.unexpected_exit("Please create a config file in script directory according to readme.")
 
-        if self.debug:
-            open('managerie_log.txt', 'w').close()  # opens and closes file to make sure it exists
-            logging.basicConfig(filename='managerie_log.txt', level=logging.DEBUG)  # sets up log file
-            logging.debug("Debug Log File Established.")
+        logging.debug("Got rules:")
+        for x in self.rules:
+            logging.debug(x)
 
+    def sort(self):
+        logging.debug("Attempting to scan directory {}".format(self.sortdir))
         try:
             with os.scandir(self.sortdir) as contents:  # scans given directory and outputs contents
                 self.contents = [i for i in contents]  # converts (?) to list format and stores
@@ -68,42 +79,34 @@ class sorter:
                     self.runrules(item, self.contents)
         except FileNotFoundError:
             self.unexpected_exit("Sort directory does not exist")
+        logging.debug("Sort Complete!")
 
     def get_rules(self):  # reads file and populates list of rules to follow
-        self.config.read("Managerie_old.ini")  # reads file into config object
+        self.config.read("Managerie.ini")  # reads file into config object
         self.debug = self.config["SETTINGS"]["Debug"]  # checks if debug is active
         self.sortdir = self.config["SETTINGS"]["Sort Directory"]  # grabs sort directory
 
-        for key, item in enumerate(self.config["DELETE RULES"]):  # loops through part of config
-            item = [x.strip() for x in item.split(',')]  # splits comma-separated parts and strips spaces
-            name = key
-            type = "del"
-            matchtype = item[1]
-            if matchtype in ("regex", "condition"):
-                match = "".join(item[2:])
-            else:
-                match = item[2:]
-            self.delrules.append(rule(name, type, matchtype, match))  # creates rules
+        for key, item in enumerate(self.config["RULES"]):  # loops through rule part of config
+                rule_parse = [x.strip() for x in self.config["RULES"][item].split(',')]  # splits comma-separated parts and strips spaces
+                logging.debug("Grabbed Rule {}:{}".format(item, rule_parse))
+                name = item
+                type = rule_parse[0]
+                targetfolder = None if type != "move" else rule_parse[1]
+                matchtype = rule_parse[1 if type != "move" else 2]
+                if matchtype in ("regex", "condition"):
+                    match = "".join(rule_parse[2 if type != "move" else 3:])
+                else:
+                    match = rule_parse[2 if type != "move" else 3:]
+                self.rules.append(rule(name, type, matchtype, match, targetfolder))  # creates rules
 
-            # config should have deletion rules in the following format:
-            # Name = matchtype, match_arg
-
-        for key, item in enumerate(self.config["SORT RULES"]):  # works just about the same as above
-            item = [x.strip() for x in item.split(',')]
-            name = key
-            type = "sort"
-            targetfolder = item[0]  # also collects a targetfolder for files matching rule
-            matchtype = item[1]
-            if matchtype == "regex":
-                match = item[2]
-            else:
-                match = item[2:]
-            self.delrules.append(rule(name, type, matchtype, match, targetfolder))
+                # config should have deletion rules in the following format:
+                # Name = matchtype, match_arg
 
             # config should have sorting rules in the following format:
             # Name = targetfolder, matchtype, match_arg
 
     def is_duplicate(self, file, target=None):  # checks if file has duplicate in target location, DELETES if true
+        logging.debug("Checking if file {} is duplicate...".format(file.name))
         if target is not None:  # TODO needs commenting
             with os.scandir(self.sortdir) as contents:
                 if re.split(self.number_splitter, file.name)[0] in [os.path.splitext(i.name)[0] for i in contents]:
@@ -120,7 +123,7 @@ class sorter:
             if not os.path.isdir(target):  # checks if path exists
                 logging.warning("Target folder does not exist. Creating folder....")
                 os.mkdir(target)  # creates path if it does not
-            os.rename(file.path, target + file.name)  # attempts to rename file to target path + filename
+            os.rename(file.path, target + '/' + file.name)  # attempts to rename file to target path + filename
 
     def delfile(self, file):  # deletes file or folder
         if file.is_file():
@@ -128,48 +131,48 @@ class sorter:
         else:
             shutil.rmtree(file.path)
 
+    def resolve(self, file, rule):  # decides whether to move or delete file based on rule
+        if rule.type == "del":
+            logging.debug("File {} matches deletion rule {}. Deleting...".format(file.name, rule.name))
+            self.delfile(file)
+            return "deleted"
+        elif rule.type == "move":
+            logging.debug("File {} matches sorting rule {}. Moving...".format(file.name, rule.name))
+            self.move(file, rule.targetfolder)
+            return "moved"
+
     def runrules(self, file, contents):  # runs a file through all rules to find appropriate action
+        if file.name == "Managerie.ini":
+            logging.debug("File is Managerie config. Skipping...")
+            return "Ignored"
+        if file.name == "managerie_log.txt":
+            logging.debug("File is managerie log. {}...".format("Deleting" if not self.debug else "Skipping"))
+            if self.debug:
+                return "Ignored"
+            else:
+                self.delfile(file)
+
         if self.is_duplicate(file):  # checks if file is duplicate
             logging.debug("File is duplicate in directory. Deleting...")
             return "Deleted"
 
-        for rule in self.sortrules:  # checks if file matches sorting rule
-            logging.debug("Attempting to match file {} to sorting rule...".format(file.name))
-            if rule.match == "regex":
+        logging.debug("Attempting to match file {} to rule...".format(file.name))
+        for rule in self.rules:  # checks if file matches sorting rule
+            if rule.matchtype == "regex":
                 if re.compile(rule.match).match(file.name):  # checks against given regex
-                    logging.debug("File matches sorting rule {}. Moving... ".format(rule.name))
-                    self.move(file, rule.targetfolder)
-                    return "moved"
-            elif rule.match == "list":
-                if any(True if x in file.name else False for x in rule.match):  # checks if file has any keywords in it
-                    logging.debug("File matches sorting rule {}. Moving... ".format(rule.name))
-                    self.move(file, rule.targetfolder)
-                    return "moved"
+                    return self.resolve(file, rule)
+            elif rule.matchtype == "list":
+                if any(True if x.lower() in file.name.lower() else False for x in rule.match):  # checks if file has any keywords in it
+                    return self.resolve(file, rule)
             elif rule.matchtype == "condition":
                 if eval(rule.match):  # evaluates code given by config for checking arbitrary conditions
-                    logging.debug("File matches sorting rule {}. Moving...".format(rule.name))
-                    self.move(file, rule.targetfolder)
-                    return "moved"
-
-        for rule in self.delrules:  # checks if file matches deletion rule
-            logging.debug("Attempting to match file {} to deletion rule...".format(file.name))
-            if rule.matchtype == "regex":
-                if re.compile(rule.match).match(file.name):
-                    logging.debug("File matches deletion rule {}. Deleting...".format(rule.name))
-                    self.delfile(file)
-                    return "Deleted"
-            elif rule.matchtype == "list":
-                if any(True if x in file.name else False for x in rule.match):
-                    logging.debug("File matches deletion rule {}. Deleting...".format(rule.name))
-                    self.delfile(file)
-                    return "Deleted"
-            elif rule.matchtype == "condition":
-                if eval(rule.match):
-                    logging.debug("File matches deletion rule {}. Deleting...".format(rule.name))
-                    self.delfile(file)
-                    return "Deleted"
+                    return self.resolve(file, rule)
 
     def unexpected_exit(self, msg):  # logs error and exits after waiting long enough for user to read error
-        logging.error("ERROR: {}".format(msg))
+        logging.error(msg)
         time.sleep(5)
         exit()
+
+
+mysorter = sorter()
+mysorter.sort()
