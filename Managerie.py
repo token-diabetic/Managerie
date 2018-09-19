@@ -122,7 +122,7 @@ class sorter:
             if not os.path.isdir(target):  # checks if path exists
                 logging.warning("Target folder does not exist. Creating folder....")
                 os.mkdir(target)  # creates path if it does not
-            os.rename(file.path, target + '/' + file.name)  # attempts to rename file to target path + filename
+            shutil.move(file.path, target + '/' + file.name)  # attempts to rename file to target path + filename
 
     def delfile(self, file):  # deletes file or folder
         if file.is_file():
