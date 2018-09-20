@@ -39,3 +39,6 @@ For both, mode may be ```list```, ```regex```, ```regex_list```, or ```condition
 
 ```condition``` allows an arbitrary logical python statement to be evaluated to make the decision.
 Any statement which is in error will be ignored.
+
+## Troubleshooting
+If the script crashes before being able to read the config, it'll keep the log file. This generally indicates that the config file has a typo. In fact, most errors are likely due to a typo in the config file, however if nothing can fix it, send me your config file and steps to reproduce the issue.
