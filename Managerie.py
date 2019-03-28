@@ -31,12 +31,6 @@ class rule:
             temp = self.match
             self.match = re.compile(temp)
 
-    def checkmatch(self, file):
-        o = 0
-        # check if file matches rule, add handling for checking whether matching with regex or list
-        # add handling for condition type, need to evaluate string into code
-
-
 class sorter:
 
     def __init__(self):
